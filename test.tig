@@ -1,0 +1,30 @@
+let
+     type a = int
+     type b = a
+     var j : a := 2
+     var i : int := j
+     var k : int := 0
+     type c = array of int
+     var arr : c := c [10] of j 
+     
+     type myRec = { x : int,
+                    y : string}
+
+     var d : myRec := myRec {   
+                    x = 1,
+                    y = "dog"
+                    }
+
+     function double (x : int) : int = x*2
+
+in
+     while k < 20 do
+     (
+
+          printi(double(k)),
+          k := k + 1,
+          if k > 10
+          then break
+     )
+          
+end

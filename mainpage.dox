@@ -1,0 +1,163 @@
+/*! \mainpage CSC425: TIGER COMPILER
+ *
+ * \section brief_sec OVERVIEW 
+
+The following describes my compiler/interpreter constructed in CSC425 for Dr. Schwesinger.
+The compiler/interpreter is for the Tiger language (can find online). While the compiler
+does function entirely up to specifications, it mostly works. It generally fails with recursion,
+but in my own tests, it seemingly works with most Tiger programs.\n\n
+
+To compile and interpret a Tiger program, simply type:\n\n
+
+./tigerc (Tiger source file)\n\n
+
+To recompile the TigerC binary file, the following dependencies are
+required:\n\n
+
+Flex\n
+Bison\n
+C++11 compiler\n\n
+
+And if you're running on the dated Acad server, make sure you have the following
+in your .bash_profile to ensure the C++11 libraries get linked:\n\n
+
+export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/opt/gcc6/lib64\n\n
+
+Now, onto design and issues...\n\n\n
+ *
+ * \section compilation_sec DESIGN : LEXER
+ * 
+ The lexer portion of the compiler is written in tigerLex.l. This file
+is used in conjunction with the Flex lexer tool to ease some of the token
+processing...process. \n\n
+
+The tool matches (through regular expressions) the templates on the lefthand
+side and returns a token to the calling program (which is technically the parser).
+The parser can then utilize these tokens for syntax matching.\n\n
+
+The file makes use of Flex start conditions to handle multiline comments. Essentially,
+when a comment is begin, the lexer begins to ignore all other token matching rules
+except for those marked <COMMENT>. This allows the lexer to catch newlines and maintain accurate
+line number while dumping out comments and ignoring them as tokens.\n\n\n
+
+
+**KNOWN ISSUES**: None as far as I could tell. It passed the tests and I didn't notice
+anything particularly odd.\n\n\n
+ * 
+ * \section execution_sec DESIGN : PARSER
+ * 
+The parser portion of the compiler is written in tigerParse.y. This file is
+driven by the Bison tool to make syntax matching super easy. \n\n
+
+The tool takes the tokens being returned Flex and tigerLex.l and matches them
+to the grammar productions listed on the lefthand side at the top of the file. When
+a grammar rule is completely matched, a new node for an abstract syntax tree is created
+and appended to the root of the tree for later use in semantic analysis.\n\n
+
+To prevent shift/reduce conflicts, some grammar rules in Tiger were condensed to include some
+terminals, such as the LValue. To prevent other conflicts, I frankly randomly added precedence
+to some things to fix issues. I'm currently at 0 shift/reduce conflicts, and I was worried it
+would mess up my parsing somehow, but it seems okay for the time being.\n\n
+
+At the bottom of the file, that's technically the Main() of this entire compiler. That's
+where all of the lexing, parsing, semantic analysis, and interpreting are called. Technically
+bad practice but hoenstly, I didn't have the time or desire to make a nice driver file
+with the ability to choose compilation phase and to act as the real Main() for the compiler.\n\n\n
+
+
+**KNOWN ISSUES**: This is technically a semantic analysis issue, but it's traced back to
+the parser so I'm including it here. Because of how I plug in the lineNumber as the nodes
+are being built for the AST, line numbers from the lexer are used incorrectly. The rules
+in Bison seem to complete when the next token outside of the matching grammar appears,
+so as a result, line numbers for some nodes are off by at least one line.\n\n
+
+The solution to this (I think) would have been adding epsilon rules to all of the grammars
+where line number is temporarily stored as a production has begun matching. That way, the line
+number for each token should line up as it the line number is stored as the first matching
+token was read. \n\n\n
+ * 
+ * \section design_sec DESIGN : SEMANTIC ANALYSIS
+ *
+The semantic analysis portion of the compiler includes a whole lot of files, but the
+primary ones responsible for its execution are ast.h and SemanticAnalyzer.h. 
+After the tree has been constructed by the parser, the Semantic Analyzer class,
+using another class that implements the visitor pattern, visits every node in the
+tree, verifying types and scope. This is where I had the most freedom so that's
+naturally where everything went wrong.\n\n
+
+For the AST, I made a node for nearly every production. All nodes inherit from an
+abstract node base class with a lineNumber and Type on all of them. I had to make some
+dummy nodes like Decc and TyDef just because I needed some polymorphism or a way to
+distinguish between different kinds of nodes. Storing all child nodes as Node* is nice
+until later, when I have to know what kind of definition something is to act a certain
+way. Or at least I needed it that way to cooperate with my symbol table, which I think
+was effective and useful for the most part.\n\n
+
+I wrote a whole lot of classes for this symbol table, since I knew the symbol table had to be 
+mildly good or else this would have been more of a nightmare. The way I keep track of symbols
+and scope is through my big SymbolTable.h file, which contains the following classes:\n\n
+
+SymbolTable:\t   Contains a stack of scopes, all filled with symbols and types.\n
+Scope:\t\t         Defines the scope at a point in the program, like the available identifiers\n
+               and types.\n
+Symbol:\t\t        Represents variable and function identifers, adding a type/return type where
+               needed. Stored in Scope based on name.\n
+Type:\t\t          Represents a type, with subclasses RefType (Reference type), ArrType (Array Type),
+               RecType(Record type). \n\n
+
+I made a new node visitor, similar to the one for printing in the AST, which visited every node
+in the tree and performed semantic checks specific to each node. This would set the types on
+all of its children, and build scopes as for/function/let nodes were explored, and these
+would be used to calculate each node's own type.\n\n\n
+
+
+**KNOWN ISSUES**: Buckle up, this is where all the <blank> hit the fan at record speeds.\n\n
+
+For one, I know for a fact this doesn't handle recursive types and functions correctly. It
+segFaults on the recursive tests, and it's mostly because of how I handle typing. I didn't
+investigate much since I didn't care to try to fix recursive stuff in my time constraints.\n\n
+
+Another thing, Reference Types (like type a = int) start to mess things up real bad once
+references get deep enough. I didn't extensively test to see what its exact limits are and
+I did try to fix some of it, but I had trouble with type checking once there's reference types
+referencing refernece types to array filled with reference types -- you get it.\n\n
+
+Also there's probably memory leaks all over the place from pointer usage. I was not mindful
+of careful memory management. At all.\n\n\n
+ *
+* \section design_sec DESIGN : INTERPRETATION
+ *
+Implementation was much easier than semantic analysis. Most of it is done in the Interpreter.h
+file. Again, using the visitor pattern I had before, I visit each node, do some little
+evaluations for the node's subnodes as indicated in the Tiger specification, and store
+value results on each node.\n\n
+
+To store values, I made a Value class, with a bunch of subclasses for each kind of
+value:\n\n
+
+IntValue:      Integer value  \n       
+StringValue:   String value\n
+ArrayValue:    Array of other values\n
+RecordValue:   Record with fields of Name->Value\n\n
+
+Since semantic analysis (should have) verified correct typing for everything, I do
+a whole bunch of immediate type casting for values since I know for sure something will
+evaluate to a specific type of value no matter what (for most nodes). \n\n
+
+I opted to use the symbol table again for keeping track of variable values and scope of them,
+which was probably overkill. I avoided making symbols for the function names by just letting
+two parallel maps sit around with function names, body block, and parameters. Storing the node
+for the body of a function with its name made it as easy as calling evaluate() on a function
+body every time it was used in a CallExp(), then yoinking out the value from the expression body
+each time. \n\n
+
+**KNOWN ISSUES**: It fails horribly on most of the recursive tests, either because I didn't do
+semantic analysis right or I did something else stupid in the interpreter. Again, didn't really
+care to investigate this much but it definitely doesn't work right.\n\n
+
+Dear lord, the memory leaks. I probably could have taken the time to be better about passing
+Values by reference or by value, or deleting them when unused, but instead I have enough
+memory leaks to make a Niagara Falls of new lost memory pouring down onto my heap. Maybe
+in the future this is worth fixing. Technically works for anything that doesn't happen
+to be called enough to make these memory leaks happen.
+*/
